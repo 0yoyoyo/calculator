@@ -1,10 +1,97 @@
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 enum TokenKind {
     Number(u64),
     Plus,
     Minus,
     Asterisk,
     Slash,
+}
+
+#[derive(Debug)]
+enum BinOpKind {
+    Add,
+    Sub,
+    Mul,
+    Div,
+}
+
+#[derive(Debug)]
+enum NodeKind {
+    Number(u64),
+    BinOp {
+        kind: BinOpKind,
+        lhs: Box<NodeKind>,
+        rhs: Box<NodeKind>,
+    },
+}
+
+type Tokens<'a> = std::iter::Peekable<std::slice::Iter<'a, TokenKind>>;
+
+use NodeKind::*;
+use BinOpKind::*;
+
+fn num(tokens: &mut Tokens) -> Box<NodeKind> {
+    if let TokenKind::Number(n) = tokens.next().unwrap() {
+        let node = Number(*n);
+        Box::new(node)
+    } else {
+        unreachable!();
+    }
+}
+
+fn mul_or_div(tokens: &mut Tokens) -> Box<NodeKind> {
+    let lhs = num(tokens);
+    if let Some(t) = tokens.peek() {
+        if **t == TokenKind::Asterisk ||
+           **t == TokenKind::Slash {
+            let kind = match tokens.next().unwrap() {
+                TokenKind::Asterisk => Mul,
+                TokenKind::Slash => Div,
+                _ => unreachable!(),
+            };
+            let rhs = num(tokens);
+            let node = BinOp {
+                kind,
+                lhs,
+                rhs,
+            };
+            Box::new(node)
+        } else {
+            lhs
+        }
+    } else {
+        lhs
+    }
+}
+
+fn add_or_sub(tokens: &mut Tokens) -> Box<NodeKind> {
+    let lhs = mul_or_div(tokens);
+    if let Some(t) = tokens.peek() {
+        if **t == TokenKind::Plus ||
+           **t == TokenKind::Minus {
+            let kind = match tokens.next().unwrap() {
+                TokenKind::Plus => Add,
+                TokenKind::Minus => Sub,
+                _ => unreachable!(),
+            };
+            let rhs = mul_or_div(tokens);
+            let node = BinOp {
+                kind,
+                lhs,
+                rhs,
+            };
+            Box::new(node)
+        } else {
+            lhs
+        }
+    } else {
+        lhs
+    }
+}
+
+fn parse(tokens: &mut Tokens) -> Box<NodeKind> {
+    let ast = add_or_sub(tokens);
+    ast
 }
 
 pub fn read_line(line: &str) {
@@ -38,7 +125,12 @@ pub fn read_line(line: &str) {
         }
     }
 
-    dbg!(tokens);
+    println!("{:?}", tokens);
+
+    let mut iter = tokens.iter().peekable();
+    let ast = parse(&mut iter);
+
+    println!("{:?}", ast);
 }
 
 #[cfg(test)]
@@ -47,6 +139,6 @@ mod tests {
 
     #[test]
     fn it_works() {
-        read_line("12 + 123");
+        read_line("12 * 2 + 123");
     }
 }
