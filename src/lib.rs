@@ -108,7 +108,7 @@ fn eval(ast: NodeKind) -> u64 {
     }
 }
 
-pub fn read_line(line: &str) {
+pub fn interpret(line: &str) -> u64 {
     use TokenKind::*;
 
     let mut tokens: Vec<TokenKind> = Vec::new();
@@ -149,14 +149,16 @@ pub fn read_line(line: &str) {
     let r = eval(*ast);
 
     println!("{}", r);
+
+    r
 }
 
 #[cfg(test)]
 mod tests {
-    use super::read_line;
+    use super::interpret;
 
     #[test]
     fn it_works() {
-        read_line("12 * 2 + 123");
+        interpret("12 * 2 + 123");
     }
 }
