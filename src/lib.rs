@@ -94,6 +94,20 @@ fn parse(tokens: &mut Tokens) -> Box<NodeKind> {
     ast
 }
 
+fn eval(ast: NodeKind) -> u64 {
+    match ast {
+        Number(n) => n,
+        BinOp { kind, lhs, rhs } => {
+            match kind {
+                Add => eval(*lhs) + eval(*rhs),
+                Sub => eval(*lhs) - eval(*rhs),
+                Mul => eval(*lhs) * eval(*rhs),
+                Div => eval(*lhs) / eval(*rhs),
+            }
+        },
+    }
+}
+
 pub fn read_line(line: &str) {
     use TokenKind::*;
 
@@ -131,6 +145,10 @@ pub fn read_line(line: &str) {
     let ast = parse(&mut iter);
 
     println!("{:?}", ast);
+
+    let r = eval(*ast);
+
+    println!("{}", r);
 }
 
 #[cfg(test)]
