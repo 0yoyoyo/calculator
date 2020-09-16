@@ -30,85 +30,79 @@ type Tokens<'a> = std::iter::Peekable<std::slice::Iter<'a, TokenKind>>;
 use NodeKind::*;
 use BinOpKind::*;
 
-fn num(tokens: &mut Tokens) -> Box<NodeKind> {
-    if let TokenKind::Number(n) = tokens.next().unwrap() {
-        let node = Number(*n);
-        Box::new(node)
-    } else {
-        unreachable!();
-    }
-}
+struct Parser;
 
-fn mul_or_div(tokens: &mut Tokens) -> Box<NodeKind> {
-    let lhs = num(tokens);
-    if let Some(t) = tokens.peek() {
-        if **t == TokenKind::Asterisk ||
-           **t == TokenKind::Slash {
-            let kind = match tokens.next().unwrap() {
-                TokenKind::Asterisk => Mul,
-                TokenKind::Slash => Div,
-                _ => unreachable!(),
-            };
-            let rhs = num(tokens);
-            let node = BinOp {
-                kind,
-                lhs,
-                rhs,
-            };
+impl Parser {
+    fn new() -> Self {
+        Parser
+    }
+
+    fn num(&self, tokens: &mut Tokens) -> Box<NodeKind> {
+        if let TokenKind::Number(n) = tokens.next().unwrap() {
+            let node = Number(*n);
             Box::new(node)
         } else {
-            lhs
+            unreachable!();
         }
-    } else {
-        lhs
     }
-}
 
-fn add_or_sub(tokens: &mut Tokens) -> Box<NodeKind> {
-    let lhs = mul_or_div(tokens);
-    if let Some(t) = tokens.peek() {
-        if **t == TokenKind::Plus ||
-           **t == TokenKind::Minus {
-            let kind = match tokens.next().unwrap() {
-                TokenKind::Plus => Add,
-                TokenKind::Minus => Sub,
-                _ => unreachable!(),
-            };
-            let rhs = mul_or_div(tokens);
-            let node = BinOp {
-                kind,
-                lhs,
-                rhs,
-            };
-            Box::new(node)
-        } else {
-            lhs
-        }
-    } else {
-        lhs
-    }
-}
-
-fn parse(tokens: &mut Tokens) -> Box<NodeKind> {
-    let ast = add_or_sub(tokens);
-    ast
-}
-
-fn eval(ast: NodeKind) -> u64 {
-    match ast {
-        Number(n) => n,
-        BinOp { kind, lhs, rhs } => {
-            match kind {
-                Add => eval(*lhs) + eval(*rhs),
-                Sub => eval(*lhs) - eval(*rhs),
-                Mul => eval(*lhs) * eval(*rhs),
-                Div => eval(*lhs) / eval(*rhs),
+    fn mul_or_div(&self, tokens: &mut Tokens) -> Box<NodeKind> {
+        let lhs = self.num(tokens);
+        if let Some(t) = tokens.peek() {
+            if **t == TokenKind::Asterisk ||
+               **t == TokenKind::Slash {
+                let kind = match tokens.next().unwrap() {
+                    TokenKind::Asterisk => Mul,
+                    TokenKind::Slash => Div,
+                    _ => unreachable!(),
+                };
+                let rhs = self.num(tokens);
+                let node = BinOp {
+                    kind,
+                    lhs,
+                    rhs,
+                };
+                Box::new(node)
+            } else {
+                lhs
             }
-        },
+        } else {
+            lhs
+        }
+    }
+
+    fn add_or_sub(&self, tokens: &mut Tokens) -> Box<NodeKind> {
+        let lhs = self.mul_or_div(tokens);
+        if let Some(t) = tokens.peek() {
+            if **t == TokenKind::Plus ||
+               **t == TokenKind::Minus {
+                let kind = match tokens.next().unwrap() {
+                    TokenKind::Plus => Add,
+                    TokenKind::Minus => Sub,
+                    _ => unreachable!(),
+                };
+                let rhs = self.mul_or_div(tokens);
+                let node = BinOp {
+                    kind,
+                    lhs,
+                    rhs,
+                };
+                Box::new(node)
+            } else {
+                lhs
+            }
+        } else {
+            lhs
+        }
+    }
+
+    fn parse(&self, tokens: &mut Tokens) -> Box<NodeKind> {
+        let ast = self.add_or_sub(tokens);
+        ast
     }
 }
 
-pub fn interpret(line: &str) -> u64 {
+fn tokenize(line: &str) -> Vec<TokenKind> {
     use TokenKind::*;
 
     let mut tokens: Vec<TokenKind> = Vec::new();
@@ -139,10 +133,31 @@ pub fn interpret(line: &str) -> u64 {
         }
     }
 
+    tokens
+}
+
+fn eval(ast: NodeKind) -> u64 {
+    match ast {
+        Number(n) => n,
+        BinOp { kind, lhs, rhs } => {
+            match kind {
+                Add => eval(*lhs) + eval(*rhs),
+                Sub => eval(*lhs) - eval(*rhs),
+                Mul => eval(*lhs) * eval(*rhs),
+                Div => eval(*lhs) / eval(*rhs),
+            }
+        },
+    }
+}
+
+pub fn interpret(line: &str) -> u64 {
+    let tokens = tokenize(line);
+
     //println!("{:?}", tokens);
 
     let mut iter = tokens.iter().peekable();
-    let ast = parse(&mut iter);
+    let parser = Parser::new();
+    let ast = parser.parse(&mut iter);
 
     //println!("{:?}", ast);
 
@@ -151,14 +166,4 @@ pub fn interpret(line: &str) -> u64 {
     //println!("{}", r);
 
     r
-}
-
-#[cfg(test)]
-mod tests {
-    use super::interpret;
-
-    #[test]
-    fn it_works() {
-        interpret("12 * 2 + 123");
-    }
 }
