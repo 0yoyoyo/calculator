@@ -139,16 +139,16 @@ pub fn interpret(line: &str) -> u64 {
         }
     }
 
-    println!("{:?}", tokens);
+    //println!("{:?}", tokens);
 
     let mut iter = tokens.iter().peekable();
     let ast = parse(&mut iter);
 
-    println!("{:?}", ast);
+    //println!("{:?}", ast);
 
     let r = eval(*ast);
 
-    println!("{}", r);
+    //println!("{}", r);
 
     r
 }
