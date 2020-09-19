@@ -47,8 +47,8 @@ impl Parser {
     }
 
     fn mul_or_div(&self, tokens: &mut Tokens) -> Box<NodeKind> {
-        let lhs = self.num(tokens);
-        if let Some(t) = tokens.peek() {
+        let mut lhs = self.num(tokens);
+        while let Some(t) = tokens.peek() {
             if **t == TokenKind::Asterisk ||
                **t == TokenKind::Slash {
                 let kind = match tokens.next().unwrap() {
@@ -62,18 +62,17 @@ impl Parser {
                     lhs,
                     rhs,
                 };
-                Box::new(node)
+                lhs = Box::new(node);
             } else {
-                lhs
+                break;
             }
-        } else {
-            lhs
         }
+        lhs
     }
 
     fn add_or_sub(&self, tokens: &mut Tokens) -> Box<NodeKind> {
-        let lhs = self.mul_or_div(tokens);
-        if let Some(t) = tokens.peek() {
+        let mut lhs = self.mul_or_div(tokens);
+        while let Some(t) = tokens.peek() {
             if **t == TokenKind::Plus ||
                **t == TokenKind::Minus {
                 let kind = match tokens.next().unwrap() {
@@ -87,13 +86,12 @@ impl Parser {
                     lhs,
                     rhs,
                 };
-                Box::new(node)
+                lhs = Box::new(node)
             } else {
-                lhs
+                break;
             }
-        } else {
-            lhs
         }
+        lhs
     }
 
     fn parse(&self, tokens: &mut Tokens) -> Box<NodeKind> {
