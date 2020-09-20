@@ -156,55 +156,67 @@ fn eval(ast: NodeKind) -> u8 {
     }
 }
 
-unsafe fn prepare_code_area() -> *mut u8 {
-    let layout = Layout::from_size_align(1024, 4096).unwrap();
-    let p_start = alloc(layout);
-    let _ = mprotect(p_start as *const c_void, 1024, PROT_READ|PROT_WRITE|PROT_EXEC);
-    p_start
+struct Compiler {
+    p_start: *mut u8,
+    p_current: *mut u8,
 }
 
-unsafe fn push_code(current: &mut *mut u8, code: &[u8]) {
-    for b in code.iter() {
-        std::ptr::write(*current, *b);
-        *current = (*current as u64 + 1) as *mut u8;
+const PAGE_SIZE: usize = 4096;
+const CODE_AREA_SIZE: usize = 1024;
+
+impl Compiler {
+    unsafe fn new() -> Self {
+        let layout = Layout::from_size_align(CODE_AREA_SIZE, PAGE_SIZE).unwrap();
+        let p_start = alloc(layout);
+        let _ = mprotect(p_start as *const c_void, CODE_AREA_SIZE, PROT_READ|PROT_WRITE|PROT_EXEC);
+        Compiler {
+            p_start,
+            p_current: p_start,
+        }
     }
-}
 
-unsafe fn gen_code_ast(current: &mut *mut u8, ast: NodeKind) {
-    match ast {
-        Number(n) => {
-            push_code(current, &[0x6a, n as u8]); // push {}
-        },
-        BinOp { kind, lhs, rhs } => {
-            gen_code_ast(current, *rhs);
-            gen_code_ast(current, *lhs);
-            push_code(current, &[0x58]); // pop rax
-            push_code(current, &[0x5f]); // pop rdi
-            match kind {
-                Add => {
-                    push_code(current, &[0x48, 0x01, 0xf8]); // add rax, rdi
-                },
-                Sub => {
-                    push_code(current, &[0x48, 0x29, 0xf8]); // sud rax, rdi
-                },
-                Mul => {
-                    push_code(current, &[0x48, 0x0f, 0xaf, 0xc7]); // imul rax, rdi
-                },
-                Div => {
-                    push_code(current, &[0x48, 0x99]); // cqo
-                    push_code(current, &[0x48, 0xf7, 0xff]); // idiv rdi
-                },
-            }
-            push_code(current, &[0x50]); // push rax
-        },
+    unsafe fn push_code(&mut self, code: &[u8]) {
+        for b in code.iter() {
+            std::ptr::write(self.p_current, *b);
+            self.p_current = (self.p_current as u64 + 1) as *mut u8;
+        }
     }
-}
 
-unsafe fn gen_code(p_start: *mut u8, ast: NodeKind) {
-    let mut current = p_start;
-    gen_code_ast(&mut current, ast);
-    push_code(&mut current, &[0x58]); // pop rax
-    push_code(&mut current, &[0xc3]); // ret
+    unsafe fn gen_code_ast(&mut self, ast: NodeKind) {
+        match ast {
+            Number(n) => {
+                self.push_code(&[0x6a, n as u8]); // push {}
+            },
+            BinOp { kind, lhs, rhs } => {
+                self.gen_code_ast(*rhs);
+                self.gen_code_ast(*lhs);
+                self.push_code(&[0x58]); // pop rax
+                self.push_code(&[0x5f]); // pop rdi
+                match kind {
+                    Add => {
+                        self.push_code(&[0x48, 0x01, 0xf8]); // add rax, rdi
+                    },
+                    Sub => {
+                        self.push_code(&[0x48, 0x29, 0xf8]); // sud rax, rdi
+                    },
+                    Mul => {
+                        self.push_code(&[0x48, 0x0f, 0xaf, 0xc7]); // imul rax, rdi
+                    },
+                    Div => {
+                        self.push_code(&[0x48, 0x99]); // cqo
+                        self.push_code(&[0x48, 0xf7, 0xff]); // idiv rdi
+                    },
+                }
+                self.push_code(&[0x50]); // push rax
+            },
+        }
+    }
+
+    unsafe fn gen_code(&mut self, ast: NodeKind) {
+        self.gen_code_ast(ast);
+        self.push_code(&[0x58]); // pop rax
+        self.push_code(&[0xc3]); // ret
+    }
 }
 
 pub fn interpret(line: &str, use_jit: bool) -> u8 {
@@ -220,12 +232,12 @@ pub fn interpret(line: &str, use_jit: bool) -> u8 {
 
     let r = if use_jit {
         unsafe {
-            let p_start = prepare_code_area();
+            let mut compiler = Compiler::new();
 
-            //println!("0x{:>016x}", p_start as u64);
+            //println!("0x{:>016x}", compiler.p_start as u64);
 
-            gen_code(p_start, *ast);
-            let code = std::mem::transmute::<*mut u8, fn() -> u8>(p_start);
+            compiler.gen_code(*ast);
+            let code: fn() -> u8 = std::mem::transmute(compiler.p_start);
 
             // run generated code!
             code()
