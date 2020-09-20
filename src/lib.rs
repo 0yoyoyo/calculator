@@ -159,7 +159,6 @@ fn eval(ast: NodeKind) -> u8 {
 unsafe fn prepare_code_area() -> *mut u8 {
     let layout = Layout::from_size_align(1024, 4096).unwrap();
     let p_start = alloc(layout);
-    //println!("0x{:>016x}", p_start as u64);
     let _ = mprotect(p_start as *const c_void, 1024, PROT_READ|PROT_WRITE|PROT_EXEC);
     p_start
 }
@@ -171,18 +170,14 @@ unsafe fn push_code(current: &mut *mut u8, code: &[u8]) {
     }
 }
 
-unsafe fn cast_code(p: *mut u8) -> extern "C" fn() -> u8 {
-    std::mem::transmute(p)
-}
-
-unsafe fn gen_code(current: &mut *mut u8, ast: NodeKind) {
+unsafe fn gen_code_ast(current: &mut *mut u8, ast: NodeKind) {
     match ast {
         Number(n) => {
             push_code(current, &[0x6a, n as u8]); // push {}
         },
         BinOp { kind, lhs, rhs } => {
-            gen_code(current, *rhs);
-            gen_code(current, *lhs);
+            gen_code_ast(current, *rhs);
+            gen_code_ast(current, *lhs);
             push_code(current, &[0x58]); // pop rax
             push_code(current, &[0x5f]); // pop rdi
             match kind {
@@ -205,9 +200,9 @@ unsafe fn gen_code(current: &mut *mut u8, ast: NodeKind) {
     }
 }
 
-unsafe fn gen_code_wrapper(p: *mut u8, ast: NodeKind) {
-    let mut current = p;
-    gen_code(&mut current, ast);
+unsafe fn gen_code(p_start: *mut u8, ast: NodeKind) {
+    let mut current = p_start;
+    gen_code_ast(&mut current, ast);
     push_code(&mut current, &[0x58]); // pop rax
     push_code(&mut current, &[0xc3]); // ret
 }
@@ -226,9 +221,14 @@ pub fn interpret(line: &str, use_jit: bool) -> u8 {
     let r = if use_jit {
         unsafe {
             let p_start = prepare_code_area();
-            gen_code_wrapper(p_start, *ast);
-            let func = cast_code(p_start);
-            func()
+
+            //println!("0x{:>016x}", p_start as u64);
+
+            gen_code(p_start, *ast);
+            let code = std::mem::transmute::<*mut u8, fn() -> u8>(p_start);
+
+            // run generated code!
+            code()
         }
     } else {
         eval(*ast)
