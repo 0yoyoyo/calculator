@@ -38,6 +38,88 @@ enum NodeKind {
 use NodeKind::*;
 use BinOpKind::*;
 
+pub fn interpret(line: &str, use_jit: bool) -> Result<u8, ()> {
+    let tokens = tokenize(line)?;
+
+    //println!("{:?}", tokens);
+
+    let mut iter = tokens.iter().peekable();
+    let parser = Parser::new();
+    let ast = parser.parse(&mut iter)?;
+
+    //println!("{:?}", ast);
+
+    let r = if use_jit {
+        unsafe {
+            let mut compiler = Compiler::new();
+
+            //println!("0x{:>016x}", compiler.p_start as u64);
+
+            compiler.gen_code(*ast);
+            let code: fn() -> u8 = std::mem::transmute(compiler.p_start);
+
+            // run generated code!
+            code()
+
+            // TODO: Code area protection should be recovered?
+        }
+    } else {
+        eval(*ast)
+    };
+
+    //println!("{}", r);
+
+    Ok(r)
+}
+
+fn tokenize(line: &str) -> Result<Vec<TokenKind>, ()> {
+    use TokenKind::*;
+
+    let mut tokens: Vec<TokenKind> = Vec::new();
+    let mut n_tmp: Vec<u8> = Vec::new();
+    let mut bytes = line.as_bytes().iter().peekable();
+
+    while let Some(byte) = bytes.next() {
+        match byte {
+            b'0'..=b'9' => {
+                n_tmp.push(*byte);
+                while let Some(byte) = bytes.peek() {
+                    if byte.is_ascii_digit() {
+                        n_tmp.push(*bytes.next().unwrap());
+                    } else {
+                        break;
+                    }
+                }
+                let n = match std::str::from_utf8(&n_tmp).unwrap().parse() {
+                    Ok(n) => n,
+                    Err(_) => {
+                        eprintln!("Too big number!");
+                        return Err(());
+                    },
+                };
+                tokens.push(Number(n));
+                n_tmp.clear();
+            },
+            b'+' => { tokens.push(Plus); },
+            b'-' => { tokens.push(Minus); },
+            b'*' => { tokens.push(Asterisk); },
+            b'/' => { tokens.push(Slash); },
+            b' ' => {},
+            _ => {
+                eprintln!("Unexpected characters!");
+                return Err(());
+            },
+        }
+    }
+
+    if tokens.is_empty() {
+        // No error message.
+        Err(())
+    } else {
+        Ok(tokens)
+    }
+}
+
 struct Parser;
 
 impl Parser {
@@ -109,68 +191,6 @@ impl Parser {
     }
 }
 
-fn tokenize(line: &str) -> Result<Vec<TokenKind>, ()> {
-    use TokenKind::*;
-
-    let mut tokens: Vec<TokenKind> = Vec::new();
-    let mut n_tmp: Vec<u8> = Vec::new();
-    let mut bytes = line.as_bytes().iter().peekable();
-
-    while let Some(byte) = bytes.next() {
-        match byte {
-            b'0'..=b'9' => {
-                n_tmp.push(*byte);
-                while let Some(byte) = bytes.peek() {
-                    if byte.is_ascii_digit() {
-                        n_tmp.push(*bytes.next().unwrap());
-                    } else {
-                        break;
-                    }
-                }
-                let n = match std::str::from_utf8(&n_tmp).unwrap().parse() {
-                    Ok(n) => n,
-                    Err(_) => {
-                        eprintln!("Too big number!");
-                        return Err(());
-                    },
-                };
-                tokens.push(Number(n));
-                n_tmp.clear();
-            },
-            b'+' => { tokens.push(Plus); },
-            b'-' => { tokens.push(Minus); },
-            b'*' => { tokens.push(Asterisk); },
-            b'/' => { tokens.push(Slash); },
-            b' ' => {},
-            _ => {
-                eprintln!("Unexpected characters!");
-                return Err(());
-            },
-        }
-    }
-
-    if tokens.is_empty() {
-        // No error message.
-        Err(())
-    } else {
-        Ok(tokens)
-    }
-}
-
-fn eval(ast: NodeKind) -> u8 {
-    match ast {
-        Number(n) => n,
-        BinOp { kind, lhs, rhs } => {
-            match kind {
-                Add => eval(*lhs) + eval(*rhs),
-                Sub => eval(*lhs) - eval(*rhs),
-                Mul => eval(*lhs) * eval(*rhs),
-                Div => eval(*lhs) / eval(*rhs),
-            }
-        },
-    }
-}
-
 struct Compiler {
     p_start: *mut u8,
     p_current: *mut u8,
@@ -235,36 +255,16 @@ impl Compiler {
     }
 }
 
-pub fn interpret(line: &str, use_jit: bool) -> Result<u8, ()> {
-    let tokens = tokenize(line)?;
-
-    //println!("{:?}", tokens);
-
-    let mut iter = tokens.iter().peekable();
-    let parser = Parser::new();
-    let ast = parser.parse(&mut iter)?;
-
-    //println!("{:?}", ast);
-
-    let r = if use_jit {
-        unsafe {
-            let mut compiler = Compiler::new();
-
-            //println!("0x{:>016x}", compiler.p_start as u64);
-
-            compiler.gen_code(*ast);
-            let code: fn() -> u8 = std::mem::transmute(compiler.p_start);
-
-            // run generated code!
-            code()
-
-            // TODO: Code area protection should be recovered?
-        }
-    } else {
-        eval(*ast)
-    };
-
-    //println!("{}", r);
-
-    Ok(r)
+fn eval(ast: NodeKind) -> u8 {
+    match ast {
+        Number(n) => n,
+        BinOp { kind, lhs, rhs } => {
+            match kind {
+                Add => eval(*lhs) + eval(*rhs),
+                Sub => eval(*lhs) - eval(*rhs),
+                Mul => eval(*lhs) * eval(*rhs),
+                Div => eval(*lhs) / eval(*rhs),
+            }
+        },
+    }
 }
