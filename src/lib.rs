@@ -8,7 +8,7 @@ extern "C" {
 
 #[derive(Debug, PartialEq)]
 enum TokenKind {
-    Number(u64),
+    Number(u8),
     Plus,
     Minus,
     Asterisk,
@@ -25,7 +25,7 @@ enum BinOpKind {
 
 #[derive(Debug)]
 enum NodeKind {
-    Number(u64),
+    Number(u8),
     BinOp {
         kind: BinOpKind,
         lhs: Box<NodeKind>,
@@ -142,7 +142,7 @@ fn tokenize(line: &str) -> Vec<TokenKind> {
     tokens
 }
 
-fn eval(ast: NodeKind) -> u64 {
+fn eval(ast: NodeKind) -> u8 {
     match ast {
         Number(n) => n,
         BinOp { kind, lhs, rhs } => {
@@ -171,7 +171,7 @@ unsafe fn push_code(current: &mut *mut u8, code: &[u8]) {
     }
 }
 
-unsafe fn cast_code(p: *mut u8) -> extern "C" fn() -> c_int {
+unsafe fn cast_code(p: *mut u8) -> extern "C" fn() -> u8 {
     std::mem::transmute(p)
 }
 
@@ -212,7 +212,7 @@ unsafe fn gen_code_wrapper(p: *mut u8, ast: NodeKind) {
     push_code(&mut current, &[0xc3]); // ret
 }
 
-pub fn interpret(line: &str, use_jit: bool) -> u64 {
+pub fn interpret(line: &str, use_jit: bool) -> u8 {
     let tokens = tokenize(line);
 
     //println!("{:?}", tokens);
@@ -224,13 +224,12 @@ pub fn interpret(line: &str, use_jit: bool) -> u64 {
     //println!("{:?}", ast);
 
     let r = if use_jit {
-        let r = unsafe {
+        unsafe {
             let p_start = prepare_code_area();
             gen_code_wrapper(p_start, *ast);
             let func = cast_code(p_start);
             func()
-        };
-        r as u64
+        }
     } else {
         eval(*ast)
     };
