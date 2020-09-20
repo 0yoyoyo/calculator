@@ -1,6 +1,8 @@
 use std::io::{self, Write};
 use calculator::interpret;
 
+const JIT_MODE: bool = true;
+
 fn main() {
     loop {
         let mut output = io::stdout();
@@ -14,7 +16,7 @@ fn main() {
         match input {
             "quit" => break,
             _ => {
-                let result = interpret(&input);
+                let result = interpret(&input, JIT_MODE);
                 println!("{}", result);
             }
         }

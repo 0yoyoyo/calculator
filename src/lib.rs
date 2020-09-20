@@ -1,3 +1,11 @@
+extern crate libc;
+use libc::{c_void, c_int, size_t, PROT_READ, PROT_WRITE, PROT_EXEC};
+use std::alloc::{alloc, Layout};
+
+extern "C" {
+    fn mprotect(addr: *const c_void, len: size_t, prot: c_int) -> c_int;
+}
+
 #[derive(Debug, PartialEq)]
 enum TokenKind {
     Number(u64),
@@ -148,7 +156,63 @@ fn eval(ast: NodeKind) -> u64 {
     }
 }
 
-pub fn interpret(line: &str) -> u64 {
+unsafe fn prepare_code_area() -> *mut u8 {
+    let layout = Layout::from_size_align(1024, 4096).unwrap();
+    let p_start = alloc(layout);
+    //println!("0x{:>016x}", p_start as u64);
+    let _ = mprotect(p_start as *const c_void, 1024, PROT_READ|PROT_WRITE|PROT_EXEC);
+    p_start
+}
+
+unsafe fn push_code(current: &mut *mut u8, code: &[u8]) {
+    for b in code.iter() {
+        std::ptr::write(*current, *b);
+        *current = (*current as u64 + 1) as *mut u8;
+    }
+}
+
+unsafe fn cast_code(p: *mut u8) -> extern "C" fn() -> c_int {
+    std::mem::transmute(p)
+}
+
+unsafe fn gen_code(current: &mut *mut u8, ast: NodeKind) {
+    match ast {
+        Number(n) => {
+            push_code(current, &[0x6a, n as u8]); // push {}
+        },
+        BinOp { kind, lhs, rhs } => {
+            gen_code(current, *rhs);
+            gen_code(current, *lhs);
+            push_code(current, &[0x58]); // pop rax
+            push_code(current, &[0x5f]); // pop rdi
+            match kind {
+                Add => {
+                    push_code(current, &[0x48, 0x01, 0xf8]); // add rax, rdi
+                },
+                Sub => {
+                    push_code(current, &[0x48, 0x29, 0xf8]); // sud rax, rdi
+                },
+                Mul => {
+                    push_code(current, &[0x48, 0x0f, 0xaf, 0xc7]); // imul rax, rdi
+                },
+                Div => {
+                    push_code(current, &[0x48, 0x99]); // cqo
+                    push_code(current, &[0x48, 0xf7, 0xff]); // idiv rdi
+                },
+            }
+            push_code(current, &[0x50]); // push rax
+        },
+    }
+}
+
+unsafe fn gen_code_wrapper(p: *mut u8, ast: NodeKind) {
+    let mut current = p;
+    gen_code(&mut current, ast);
+    push_code(&mut current, &[0x58]); // pop rax
+    push_code(&mut current, &[0xc3]); // ret
+}
+
+pub fn interpret(line: &str, use_jit: bool) -> u64 {
     let tokens = tokenize(line);
 
     //println!("{:?}", tokens);
@@ -159,7 +223,17 @@ pub fn interpret(line: &str) -> u64 {
 
     //println!("{:?}", ast);
 
-    let r = eval(*ast);
+    let r = if use_jit {
+        let r = unsafe {
+            let p_start = prepare_code_area();
+            gen_code_wrapper(p_start, *ast);
+            let func = cast_code(p_start);
+            func()
+        };
+        r as u64
+    } else {
+        eval(*ast)
+    };
 
     //println!("{}", r);
 
