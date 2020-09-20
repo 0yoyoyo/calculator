@@ -6,6 +6,8 @@ extern "C" {
     fn mprotect(addr: *const c_void, len: size_t, prot: c_int) -> c_int;
 }
 
+type Tokens<'a> = std::iter::Peekable<std::slice::Iter<'a, TokenKind>>;
+
 #[derive(Debug, PartialEq)]
 enum TokenKind {
     Number(u8),
@@ -32,8 +34,6 @@ enum NodeKind {
         rhs: Box<NodeKind>,
     },
 }
-
-type Tokens<'a> = std::iter::Peekable<std::slice::Iter<'a, TokenKind>>;
 
 use NodeKind::*;
 use BinOpKind::*;
@@ -161,8 +161,8 @@ struct Compiler {
     p_current: *mut u8,
 }
 
-const PAGE_SIZE: usize = 4096;
 const CODE_AREA_SIZE: usize = 1024;
+const PAGE_SIZE: usize = 4096;
 
 impl Compiler {
     unsafe fn new() -> Self {
@@ -185,7 +185,7 @@ impl Compiler {
     unsafe fn gen_code_ast(&mut self, ast: NodeKind) {
         match ast {
             Number(n) => {
-                self.push_code(&[0x6a, n as u8]); // push {}
+                self.push_code(&[0x6a, n]); // push {}
             },
             BinOp { kind, lhs, rhs } => {
                 self.gen_code_ast(*rhs);
