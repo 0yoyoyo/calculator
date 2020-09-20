@@ -45,17 +45,18 @@ impl Parser {
         Parser
     }
 
-    fn num(&self, tokens: &mut Tokens) -> Box<NodeKind> {
+    fn num(&self, tokens: &mut Tokens) -> Result<Box<NodeKind>, ()> {
         if let TokenKind::Number(n) = tokens.next().unwrap() {
             let node = Number(*n);
-            Box::new(node)
+            Ok(Box::new(node))
         } else {
-            unreachable!();
+            eprintln!("Invalid expression!");
+            Err(())
         }
     }
 
-    fn mul_or_div(&self, tokens: &mut Tokens) -> Box<NodeKind> {
-        let mut lhs = self.num(tokens);
+    fn mul_or_div(&self, tokens: &mut Tokens) -> Result<Box<NodeKind>, ()> {
+        let mut lhs = self.num(tokens)?;
         while let Some(t) = tokens.peek() {
             if **t == TokenKind::Asterisk ||
                **t == TokenKind::Slash {
@@ -64,7 +65,7 @@ impl Parser {
                     TokenKind::Slash => Div,
                     _ => unreachable!(),
                 };
-                let rhs = self.num(tokens);
+                let rhs = self.num(tokens)?;
                 let node = BinOp {
                     kind,
                     lhs,
@@ -75,11 +76,11 @@ impl Parser {
                 break;
             }
         }
-        lhs
+        Ok(lhs)
     }
 
-    fn add_or_sub(&self, tokens: &mut Tokens) -> Box<NodeKind> {
-        let mut lhs = self.mul_or_div(tokens);
+    fn add_or_sub(&self, tokens: &mut Tokens) -> Result<Box<NodeKind>, ()> {
+        let mut lhs = self.mul_or_div(tokens)?;
         while let Some(t) = tokens.peek() {
             if **t == TokenKind::Plus ||
                **t == TokenKind::Minus {
@@ -88,7 +89,7 @@ impl Parser {
                     TokenKind::Minus => Sub,
                     _ => unreachable!(),
                 };
-                let rhs = self.mul_or_div(tokens);
+                let rhs = self.mul_or_div(tokens)?;
                 let node = BinOp {
                     kind,
                     lhs,
@@ -99,16 +100,16 @@ impl Parser {
                 break;
             }
         }
-        lhs
+        Ok(lhs)
     }
 
-    fn parse(&self, tokens: &mut Tokens) -> Box<NodeKind> {
-        let ast = self.add_or_sub(tokens);
-        ast
+    fn parse(&self, tokens: &mut Tokens) -> Result<Box<NodeKind>, ()> {
+        let ast = self.add_or_sub(tokens)?;
+        Ok(ast)
     }
 }
 
-fn tokenize(line: &str) -> Vec<TokenKind> {
+fn tokenize(line: &str) -> Result<Vec<TokenKind>, ()> {
     use TokenKind::*;
 
     let mut tokens: Vec<TokenKind> = Vec::new();
@@ -126,7 +127,13 @@ fn tokenize(line: &str) -> Vec<TokenKind> {
                         break;
                     }
                 }
-                let n = std::str::from_utf8(&n_tmp).unwrap().parse().unwrap();
+                let n = match std::str::from_utf8(&n_tmp).unwrap().parse() {
+                    Ok(n) => n,
+                    Err(_) => {
+                        eprintln!("Too big number!");
+                        return Err(());
+                    },
+                };
                 tokens.push(Number(n));
                 n_tmp.clear();
             },
@@ -135,11 +142,19 @@ fn tokenize(line: &str) -> Vec<TokenKind> {
             b'*' => { tokens.push(Asterisk); },
             b'/' => { tokens.push(Slash); },
             b' ' => {},
-            _ => {},
+            _ => {
+                eprintln!("Unexpected characters!");
+                return Err(());
+            },
         }
     }
 
-    tokens
+    if tokens.is_empty() {
+        // No error message.
+        Err(())
+    } else {
+        Ok(tokens)
+    }
 }
 
 fn eval(ast: NodeKind) -> u8 {
@@ -168,7 +183,8 @@ impl Compiler {
     unsafe fn new() -> Self {
         let layout = Layout::from_size_align(CODE_AREA_SIZE, PAGE_SIZE).unwrap();
         let p_start = alloc(layout);
-        let _ = mprotect(p_start as *const c_void, CODE_AREA_SIZE, PROT_READ|PROT_WRITE|PROT_EXEC);
+        let r = mprotect(p_start as *const c_void, CODE_AREA_SIZE, PROT_READ|PROT_WRITE|PROT_EXEC);
+        assert!(r == 0);
         Compiler {
             p_start,
             p_current: p_start,
@@ -219,14 +235,14 @@ impl Compiler {
     }
 }
 
-pub fn interpret(line: &str, use_jit: bool) -> u8 {
-    let tokens = tokenize(line);
+pub fn interpret(line: &str, use_jit: bool) -> Result<u8, ()> {
+    let tokens = tokenize(line)?;
 
     //println!("{:?}", tokens);
 
     let mut iter = tokens.iter().peekable();
     let parser = Parser::new();
-    let ast = parser.parse(&mut iter);
+    let ast = parser.parse(&mut iter)?;
 
     //println!("{:?}", ast);
 
@@ -241,6 +257,8 @@ pub fn interpret(line: &str, use_jit: bool) -> u8 {
 
             // run generated code!
             code()
+
+            // TODO: Code area protection should be recovered?
         }
     } else {
         eval(*ast)
@@ -248,5 +266,5 @@ pub fn interpret(line: &str, use_jit: bool) -> u8 {
 
     //println!("{}", r);
 
-    r
+    Ok(r)
 }

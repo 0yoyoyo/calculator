@@ -16,8 +16,10 @@ fn main() {
         match input {
             "quit" => break,
             _ => {
-                let result = interpret(&input, JIT_MODE);
-                println!("{}", result);
+                match interpret(&input, JIT_MODE) {
+                    Ok(result) => println!("{}", result),
+                    Err(_) => {},
+                }
             }
         }
     }
