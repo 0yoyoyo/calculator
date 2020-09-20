@@ -128,13 +128,14 @@ impl Parser {
     }
 
     fn num(&self, tokens: &mut Tokens) -> Result<Box<NodeKind>, ()> {
-        if let TokenKind::Number(n) = tokens.next().unwrap() {
-            let node = Number(*n);
-            Ok(Box::new(node))
-        } else {
-            eprintln!("Invalid expression!");
-            Err(())
+        if let Some(token) = tokens.next() {
+            if let TokenKind::Number(n) = *token {
+                let node = Number(n);
+                return Ok(Box::new(node));
+            }
         }
+        eprintln!("Invalid expression!");
+        Err(())
     }
 
     fn mul_or_div(&self, tokens: &mut Tokens) -> Result<Box<NodeKind>, ()> {
