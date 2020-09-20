@@ -41,24 +41,17 @@ use BinOpKind::*;
 pub fn interpret(line: &str, use_jit: bool) -> Result<u8, ()> {
     let tokens = tokenize(line)?;
 
-    //println!("{:?}", tokens);
-
     let mut iter = tokens.iter().peekable();
     let parser = Parser::new();
     let ast = parser.parse(&mut iter)?;
 
-    //println!("{:?}", ast);
-
     let r = if use_jit {
         unsafe {
             let mut compiler = Compiler::new();
-
-            //println!("0x{:>016x}", compiler.p_start as u64);
-
             compiler.gen_code(*ast);
             let code: fn() -> u8 = std::mem::transmute(compiler.p_start);
 
-            // run generated code!
+            // Run generated code!
             code()
 
             // TODO: Code area protection should be recovered?
@@ -66,8 +59,6 @@ pub fn interpret(line: &str, use_jit: bool) -> Result<u8, ()> {
     } else {
         eval(*ast)
     };
-
-    //println!("{}", r);
 
     Ok(r)
 }
@@ -93,7 +84,7 @@ fn tokenize(line: &str) -> Result<Vec<TokenKind>, ()> {
                 let n = match std::str::from_utf8(&n_tmp).unwrap().parse() {
                     Ok(n) => n,
                     Err(_) => {
-                        eprintln!("Too big number!");
+                        eprintln!("Too big numbers!");
                         return Err(());
                     },
                 };
