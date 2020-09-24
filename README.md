@@ -1,4 +1,4 @@
-# calculator
+# Calculator
 
 Simple calculator with JIT compiling.
 
