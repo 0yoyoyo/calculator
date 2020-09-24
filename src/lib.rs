@@ -1,6 +1,6 @@
 extern crate libc;
 use libc::{c_void, c_int, size_t, PROT_READ, PROT_WRITE, PROT_EXEC};
-use std::alloc::{alloc, Layout};
+use std::alloc::{alloc, dealloc, Layout};
 
 extern "C" {
     fn mprotect(addr: *const c_void, len: size_t, prot: c_int) -> c_int;
@@ -45,22 +45,21 @@ pub fn interpret(line: &str, use_jit: bool) -> Result<u8, ()> {
     let parser = Parser::new();
     let ast = parser.parse(&mut iter)?;
 
-    let r = if use_jit {
+    if use_jit {
         unsafe {
             let mut compiler = Compiler::new();
             compiler.gen_code(*ast);
             let code: fn() -> u8 = std::mem::transmute(compiler.p_start);
 
             // Run generated code!
-            code()
+            let r = code();
 
-            // TODO: Code area protection should be recovered?
+            compiler.free();
+            Ok(r)
         }
     } else {
-        eval(*ast)
-    };
-
-    Ok(r)
+        Ok(eval(*ast))
+    }
 }
 
 fn tokenize(line: &str) -> Result<Vec<TokenKind>, ()> {
@@ -201,6 +200,15 @@ impl Compiler {
             p_start,
             p_current: p_start,
         }
+    }
+
+    unsafe fn free(&self) {
+        let layout = Layout::from_size_align(CODE_AREA_SIZE, PAGE_SIZE).unwrap();
+
+        // Recovery memory protection
+        let r = mprotect(self.p_start as *const c_void, CODE_AREA_SIZE, PROT_READ|PROT_WRITE);
+        assert!(r == 0);
+        dealloc(self.p_start, layout);
     }
 
     unsafe fn push_code(&mut self, code: &[u8]) {
