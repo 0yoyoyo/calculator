@@ -216,10 +216,10 @@ impl Compiler {
                 self.push_code(&[0x6a, n]); // push {}
             },
             BinOp { kind, lhs, rhs } => {
-                self.gen_code_ast(*rhs);
                 self.gen_code_ast(*lhs);
-                self.push_code(&[0x58]); // pop rax
+                self.gen_code_ast(*rhs);
                 self.push_code(&[0x5f]); // pop rdi
+                self.push_code(&[0x58]); // pop rax
                 match kind {
                     Add => {
                         self.push_code(&[0x48, 0x01, 0xf8]); // add rax, rdi
