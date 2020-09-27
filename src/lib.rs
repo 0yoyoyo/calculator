@@ -45,21 +45,20 @@ pub fn interpret(line: &str, use_jit: bool) -> Result<u8, ()> {
     let parser = Parser::new();
     let ast = parser.parse(&mut iter)?;
 
-    if use_jit {
+    let r = if use_jit {
         unsafe {
             let mut compiler = Compiler::new();
             compiler.gen_code(*ast);
             let code: fn() -> u8 = std::mem::transmute(compiler.p_start);
 
             // Run generated code!
-            let r = code();
-
-            compiler.free();
-            Ok(r)
+            code()
         }
     } else {
-        Ok(eval(*ast))
-    }
+        eval(*ast)
+    };
+
+    Ok(r)
 }
 
 fn tokenize(line: &str) -> Result<Vec<TokenKind>, ()> {
@@ -190,6 +189,20 @@ struct Compiler {
 const CODE_AREA_SIZE: usize = 1024;
 const PAGE_SIZE: usize = 4096;
 
+impl Drop for Compiler {
+    fn drop(&mut self) {
+        unsafe {
+            let layout = Layout::from_size_align(CODE_AREA_SIZE, PAGE_SIZE).unwrap();
+
+            // Recovery memory protection
+            let r = mprotect(self.p_start as *const c_void, CODE_AREA_SIZE, PROT_READ|PROT_WRITE);
+            assert!(r == 0);
+
+            dealloc(self.p_start, layout);
+        }
+    }
+}
+
 impl Compiler {
     unsafe fn new() -> Self {
         let layout = Layout::from_size_align(CODE_AREA_SIZE, PAGE_SIZE).unwrap();
@@ -200,15 +213,6 @@ impl Compiler {
             p_start,
             p_current: p_start,
         }
-    }
-
-    unsafe fn free(&self) {
-        let layout = Layout::from_size_align(CODE_AREA_SIZE, PAGE_SIZE).unwrap();
-
-        // Recovery memory protection
-        let r = mprotect(self.p_start as *const c_void, CODE_AREA_SIZE, PROT_READ|PROT_WRITE);
-        assert!(r == 0);
-        dealloc(self.p_start, layout);
     }
 
     unsafe fn push_code(&mut self, code: &[u8]) {
